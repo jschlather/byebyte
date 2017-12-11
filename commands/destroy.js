@@ -9,9 +9,15 @@ var api = module.exports = {
         var options = {
             times: {
                 alias: 't',
-                describe: 'the number of times to corrupt a byte',
+                describe: 'the number of times to corrupt a random byte in the file',
                 type: 'number'
             },
+	    discrete: {
+		alias: 'd',
+		describe: 'if turned on will cause the corruptions to be spaced evenly over the length of the file. Cannot be used with continuous.',
+		'default': false,
+		type: 'boolean'
+	    },
             continuous: {
                 alias: 'c',
                 describe: 'whether or not to randomly continue corrupting the next piece of data',
@@ -32,6 +38,7 @@ var api = module.exports = {
     handler: function (argv) {
         var continuous = argv.c || argv.continuous;
         var continuousChance = argv.C || argv.continuousChance || 0.6;
+	var discrete = argv.u || argv.discrete
 
         var times = argv.t || argv.times || 50;
         var filepath = argv.i || argv.input;
@@ -49,7 +56,8 @@ var api = module.exports = {
           start: start,
           stop: stop,
           continuous: continuous,
-          continuousChance: continuousChance
+          continuousChance: continuousChance,
+	  discrete: discrete
         });
 
         fs.writeFileSync( path.resolve( process.cwd(), out ), fileBuffer );
@@ -60,7 +68,12 @@ var api = module.exports = {
         var continuous = opts.continuous || false;
         var continuousChance = opts.continuousChance || 0.6;
         var times = opts.times || 50;
+	var discrete = opts.discrete || false;
 
+	if(discrete && continuous) {
+	    throw new Error('Discrete and continuous may not be used together.');
+	}
+	
         var len = fileBuffer.length;
 
         util.checkGeneralLength(opts, len);
@@ -72,8 +85,10 @@ var api = module.exports = {
         if (start > stop) {
           throw new Error(`${terms[0]} must be smaller than ${terms[1]}`);
         }
+	var lengthOfRange = stop - start;
 
-        var offset = getRandomInt(start, stop);
+        var offset = discrete ? start : getRandomInt(start, stop);
+	
         for (var i = 0; i < times; i++) {
             fileBuffer[ offset ] = getRandomInt(1, 255);
 
@@ -81,13 +96,17 @@ var api = module.exports = {
             // not run off the range of the buffer, we continue on to the next
             // pixel slot to override if we beat our continuousChance. If not,
             // we go to a random place within our range.
-            if (continuous && (offset + 1 <= len)) {
+            if (continuous && (offset + 1 <= len) && !discrete) {
                 if ((continuousChance > Math.random()) && (offset + 1 <= stop)) {
                     offset++;
                 } else {
                     offset = getRandomInt(start, stop);
                 }
-            } else {
+            } else if(discrete) {
+		offset += ((stop - start) / times) | 0;
+		console.log('new offset' + offset);
+	    }
+	    else {
                 offset = getRandomInt(start, stop);
             }
         }
